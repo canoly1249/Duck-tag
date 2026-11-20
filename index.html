@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stud Duck Tag Platformer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+  body { background: #87CEEB; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  #game-container { position: relative; width: 960px; height: 540px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden; background: #e0f7fa; border: 4px solid #4CAF50; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  
+  /* UI Overlays */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(4px); z-index: 10; }
+  .hidden { display: none !important; }
+  
+  h1 { font-size: 3.5rem; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; text-shadow: 2px 2px 0 #81C784; color: #2E7D32; }
+  h2 { font-size: 2rem; margin-bottom: 20px; color: #388E3C; }
+  
+  .btn { background: #4CAF50; color: white; border: none; padding: 14px 36px; font-size: 1.3rem; font-weight: bold; border-radius: 8px; cursor: pointer; margin: 8px; box-shadow: 0 5px 0 #388E3C; transition: transform 0.1s; }
+  .btn:hover { background: #66BB6A; transform: translateY(-2px); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #388E3C; }
+  
+  .btn-secondary { background: #42A5F5; box-shadow: 0 5px 0 #1E88E5; }
+  .btn-secondary:hover { background: #64B5F6; }
+  .btn-danger { background: #EF5350; box-shadow: 0 5px 0 #E53935; }
+  .btn-danger:hover { background: #E57373; }
+  
+  /* Settings Grid */
+  .settings-box { background: rgba(76, 175, 80, 0.1); padding: 25px 40px; border-radius: 10px; width: 480px; margin-bottom: 15px; border: 2px solid #C8E6C9; }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; font-size: 1.1rem; color: #2C3E50; font-weight: bold; }
+  .setting-row input[type="range"] { width: 160px; cursor: pointer; }
+  .val-badge { background: #388E3C; padding: 4px 10px; border-radius: 4px; font-weight: bold; min-width: 75px; text-align: center; color: #FFF; }
+  
+  /* Map Grid */
+  .map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 820px; margin-bottom: 20px; }
+  .map-card { background: #FFFFFF; border: 2px solid #A5D6A7; border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: 0.15s; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+  .map-card:hover { transform: translateY(-4px); border-color: #4CAF50; background: #F1F8E9; }
+  .map-card h3 { margin-bottom: 6px; font-size: 1.25rem; color: #2E7D32; }
+  .map-card p { font-size: 0.85rem; color: #555; line-height: 1.3; }
+  
+  /* HUD */
+  #hud { position: absolute; top: 12px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 5; }
+  .hud-box { background: rgba(255, 255, 255, 0.9); padding: 8px 18px; border-radius: 6px; font-size: 1.2rem; font-weight: bold; border: 2px solid #81C784; color: #2E7D32; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  #controls-hint { position: absolute; bottom: 8px; width: 100%; text-align: center; font-size: 0.75rem; color: #2C3E50; text-shadow: 1px 1px 0 #FFF; pointer-events: none; z-index: 5; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="gameCanvas" width="960" height="540"></canvas>
+  
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-box" id="hud-tagger">TAGGER: P1</div>
+    <div class="hud-box" id="hud-timer" style="color: #D32F2F; font-size: 1.5rem;">60s</div>
+    <div class="hud-box" id="hud-map">MAP: FIELDS</div>
+  </div>
+  <div id="controls-hint" class="hidden">
+    P1 (Blue): Move A/D, Jump W, Dash Q (10s cd), Emote S &nbsp;|&nbsp; P2 (Red): Move Left/Right, Jump Up, Dash Y, Emote K<br>
+    P3 (Green): Move J/L, Jump I, Dash O, Emote G &nbsp;|&nbsp; P4 (Yellow): Move F/H, Jump T, Dash Space, Emote Down
+  </div>
+
+  <!-- START MENU -->
+  <div id="menu-screen" class="screen">
+    <h1>STUD DUCK TAG</h1>
+    <p style="margin-bottom: 25px; color: #555; font-weight: bold;">Happy Local Multiplayer Platformer Tag</p>
+    <button class="btn" onclick="startAudio(); showScreen('map-screen')">PLAY</button>
+    <button class="btn btn-secondary" onclick="startAudio(); showScreen('settings-screen')">SETTINGS</button>
+  </div>
+
+  <!-- SETTINGS SCREEN -->
+  <div id="settings-screen" class="screen hidden">
+    <h2>GAME SETTINGS</h2>
+    <div class="settings-box">
+      <div class="setting-row">
+        <span>Player Speed (studs)</span>
+        <input type="range" id="set-speed" min="10" max="50" step="5" value="25" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-speed">25</span>
+      </div>
+      <div class="setting-row">
+        <span>Tagger Speed Boost</span>
+        <input type="range" id="set-boost" min="0" max="30" step="1" value="6" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-boost">+6%</span>
+      </div>
+      <div class="setting-row">
+        <span>Player Count</span>
+        <input type="range" id="set-players" min="2" max="4" step="1" value="2" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-players">2</span>
+      </div>
+      <div class="setting-row">
+        <span>Round Timer</span>
+        <input type="range" id="set-timer" min="15" max="180" step="5" value="60" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-timer">60s</span>
+      </div>
+    </div>
+    <div>
+      <button class="btn btn-danger" onclick="resetSettings()">Reset All</button>
+      <button class="btn" onclick="showScreen('menu-screen')">Done</button>
+    </div>
+  </div>
+
+  <!-- MAP SELECTION SCREEN -->
+  <div id="map-screen" class="screen hidden">
+    <h2>SELECT A MAP</h2>
+    <div class="map-grid">
+      <div class="map-card" onclick="startGame('fields')">
+        <h3>1. Fields</h3>
+        <p>Classic grassy studs and fun parkour platforms.</p>
+      </div>
+      <div class="map-card" onclick="startGame('blossom')">
+        <h3>2. Blossom</h3>
+        <p>Serene cherry blossoms with gently falling pink petals.</p>
+      </div>
+      <div class="map-card" onclick="startGame('volcanic')">
+        <h3>3. Volcanic</h3>
+        <p>Warm rocks & bouncing magma hazards!</p>
+      </div>
+      <div class="map-card" onclick="
