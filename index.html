@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stud Duck Tag Platformer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+  body { background: #1a1a2e; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  #game-container { position: relative; width: 960px; height: 540px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border-radius: 8px; overflow: hidden; background: #222; }
+  canvas { display: block; width: 100%; height: 100%; }
+  
+  /* UI Overlays */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(15, 20, 35, 0.88); backdrop-filter: blur(4px); z-index: 10; }
+  .hidden { display: none !important; }
+  
+  h1 { font-size: 3.5rem; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; text-shadow: 0 4px 0 #000; color: #ffce00; }
+  h2 { font-size: 2rem; margin-bottom: 20px; text-shadow: 0 2px 0 #000; }
+  
+  .btn { background: #00b06f; color: white; border: none; padding: 14px 36px; font-size: 1.3rem; font-weight: bold; border-radius: 6px; cursor: pointer; margin: 8px; box-shadow: 0 5px 0 #007a4d; transition: transform 0.1s; }
+  .btn:hover { background: #00c87e; transform: translateY(-2px); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #007a4d; }
+  
+  .btn-secondary { background: #3b82f6; box-shadow: 0 5px 0 #1d4ed8; }
+  .btn-secondary:hover { background: #60a5fa; }
+  .btn-danger { background: #ef4444; box-shadow: 0 5px 0 #b91c1c; }
+  .btn-danger:hover { background: #f87171; }
+  
+  /* Settings Grid */
+  .settings-box { background: rgba(255,255,255,0.08); padding: 25px 40px; border-radius: 10px; width: 480px; margin-bottom: 15px; }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; font-size: 1.1rem; }
+  .setting-row input[type="range"] { width: 160px; cursor: pointer; }
+  .val-badge { background: #000; padding: 4px 10px; border-radius: 4px; font-weight: bold; min-width: 75px; text-align: center; color: #ffce00; }
+  
+  /* Map Grid */
+  .map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 820px; margin-bottom: 20px; }
+  .map-card { background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: 0.15s; }
+  .map-card:hover { transform: translateY(-4px); border-color: #ffce00; background: rgba(255,255,255,0.18); }
+  .map-card h3 { margin-bottom: 6px; font-size: 1.25rem; color: #ffce00; }
+  .map-card p { font-size: 0.85rem; color: #ddd; line-height: 1.3; }
+  
+  /* HUD */
+  #hud { position: absolute; top: 12px; left: 20px; right: 20px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 5; }
+  .hud-box { background: rgba(0,0,0,0.65); padding: 8px 18px; border-radius: 6px; font-size: 1.2rem; font-weight: bold; border: 2px solid rgba(255,255,255,0.15); }
+  #controls-hint { position: absolute; bottom: 8px; width: 100%; text-align: center; font-size: 0.75rem; color: rgba(255,255,255,0.8); text-shadow: 1px 1px 2px #000; pointer-events: none; z-index: 5; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="gameCanvas" width="960" height="540"></canvas>
+  
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-box" id="hud-tagger">TAGGER: P1</div>
+    <div class="hud-box" id="hud-timer" style="color: #ffce00; font-size: 1.5rem;">60s</div>
+    <div class="hud-box" id="hud-map">MAP: FIELDS</div>
+  </div>
+  <div id="controls-hint" class="hidden">
+    P1 (Blue): Move A/D, Jump W, Dash Q (10s cd), Emote S &nbsp;|&nbsp; P2 (Red): Move Left/Right, Jump Up, Dash Y, Emote K<br>
+    P3 (Green): Move J/L, Jump I, Dash O, Emote G &nbsp;|&nbsp; P4 (Yellow): Move F/H, Jump T, Dash Space, Emote Down
+  </div>
+
+  <!-- START MENU -->
+  <div id="menu-screen" class="screen">
+    <h1>STUD DUCK TAG</h1>
+    <p style="margin-bottom: 25px; color: #ccc;">Local Multiplayer Platformer Tag</p>
+    <button class="btn" onclick="startAudio(); showScreen('map-screen')">PLAY</button>
+    <button class="btn btn-secondary" onclick="startAudio(); showScreen('settings-screen')">SETTINGS</button>
+  </div>
+
+  <!-- SETTINGS SCREEN -->
+  <div id="settings-screen" class="screen hidden">
+    <h2>GAME SETTINGS</h2>
+    <div class="settings-box">
+      <div class="setting-row">
+        <span>Player Speed (studs/s)</span>
+        <input type="range" id="set-speed" min="0.5" max="3.0" step="0.1" value="1.3" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-speed">1.3</span>
+      </div>
+      <div class="setting-row">
+        <span>Tagger Speed Boost</span>
+        <input type="range" id="set-boost" min="0" max="30" step="1" value="6" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-boost">+6%</span>
+      </div>
+      <div class="setting-row">
+        <span>Player Count</span>
+        <input type="range" id="set-players" min="2" max="4" step="1" value="2" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-players">2</span>
+      </div>
+      <div class="setting-row">
+        <span>Round Timer</span>
+        <input type="range" id="set-timer" min="15" max="180" step="5" value="60" oninput="updateSettingsUI()">
+        <span class="val-badge" id="val-timer">60s</span>
+      </div>
+    </div>
+    <div>
+      <button class="btn btn-danger" onclick="resetSettings()">Reset All to Default</button>
+      <button class="btn" onclick="showScreen('menu-screen')">Done</button>
+    </div>
+  </div>
+
+  <!-- MAP SELECTION SCREEN -->
+  <div id="map-screen" class="screen hidden">
+    <h2>SELECT A MAP</h2>
+    <div class="map-grid">
+      <div class="map-card" onclick="startGame('fields')">
+        <h3>1. Fields</h3>
+        <p>Classic grassy studs and easy, fun parkour platforms.</p>
+      </div>
+      <div class="map-card" onclick="startGame('blossom')">
+        <h3>2. Blossom</h3>
+        <p>Serene cherry blossoms with gently falling pink leaves.</p>
+      </div>
+      <div class="map-card" onclick="startGame('volcanic')">
+        <h3>3. Volcanic</h3>
+        <p>Magma & black rocks. Falling boulders knock you limp for 2s!</p>
+      </div>
+      <div class="map-card" onclick="startGame('snowy')">
+        <h3>4. Snowy</h3>
+        <p>Slippery low-friction ice floors, snowmen, and snowy ledges.</p>
+      </div>
+      <div class="map-card" onclick="startGame('spooky')">
+        <h3>5. Spooky</h3>
+        <p>Bone platforms, skeleton props, and glowing jack-o'-lanterns.</p>
+      </div>
+      <div class="map-card" onclick="startGame('christmas')">
+        <h3>6. Christmas</h3>
+        <p>Festive holiday vibes! Presents act as high-launch bounce pads.</p>
+      </div>
+    </div>
+    <button class="btn btn-secondary" onclick="showScreen('menu-screen')">Back</button>
+  </div>
+
+  <!-- GAME OVER SCREEN -->
+  <div id="gameover-screen" class="screen hidden">
+    <h1 id="winner-text">RUNNERS WIN!</h1>
+    <p id="gameover-sub" style="font-size: 1.2rem; margin-bottom: 25px; color: #ddd;"></p>
+    <div>
+      <button class="btn" onclick="showScreen('map-screen')">Play Again</button>
+      <button class="btn btn-secondary" onclick="showScreen('menu-screen')">Main Menu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- LOAD DUCK SPRITE FROM SOURCE ---
+const duckImg = new Image();
+duckImg.src = "data:image/pngp98kjasdnasd983/24kasdjasdbase64,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"[cite: 1];
+
+// --- AUDIO SYNTH (Web Audio API) ---
+let audioCtx = null;
+let currentMusicInterval = null;
+
+function startAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  playMenuMusic();
+}
+
+function stopMusic() {
+  if (currentMusicInterval) {
+    clearInterval(currentMusicInterval);
+    currentMusicInterval = null;
+  }
+}
+
+// Play notes helper
+function playTone(freq, duration, type = 'sine', volume = 0.05) {
+  if (!audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch(e) {}
+}
+
+function playMenuMusic() {
+  stopMusic();
+  // Chill vibe arpeggio (Pentatonic notes)
+  const notes = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25];
+  let idx = 0;
+  currentMusicInterval = setInterval(() => {
+    if (!audioCtx) return;
+    playTone(notes[idx % notes.length], 0.8, 'sine', 0.04);
+    if (idx % 2 === 0) {
+      playTone(notes[(idx + 2) % notes.length] / 2, 1.2, 'triangle', 0.03);
+    }
+    idx++;
+  }, 450);
+}
+
+function playMapMusic(mapName) {
+  stopMusic();
+  let notes = [220, 246.94, 277.18, 329.63, 369.99];
+  let tempo = 350;
+  let type = 'sine';
+
+  if (mapName === 'blossom') {
+    notes = [300, 350, 400, 450, 500];
+    tempo = 400;
+  } else if (mapName === 'volcanic') {
+    notes = [150, 180, 160, 210, 140];
+    tempo = 220;
+    type = 'sawtooth';
+  } else if (mapName === 'snowy') {
+    notes = [440, 493.88, 554.37, 659.25, 740];
+    tempo = 300;
+  } else if (mapName === 'spooky') {
+    notes = [130.81, 138.59, 146.83, 123.47];
+    tempo = 500;
+    type = 'triangle';
+  } else if (mapName === 'christmas') {
+    notes = [261.63, 329.63, 392.00, 523.25, 587.33];
+    tempo = 250;
+  }
+
+  let idx = 0;
+  currentMusicInterval = setInterval(() => {
+    if (!audioCtx) return;
+    playTone(notes[idx % notes.length], 0.5, type, 0.04);
+    idx++;
+  }, tempo);
+}
+
+// --- SETTINGS STATE ---
+const defaultSettings = { speed: 1.3, taggerBoost: 6, playerCount: 2, timer: 60 };
+let settings = { ...defaultSettings };
+
+function updateSettingsUI() {
+  settings.speed = parseFloat(document.getElementById('set-speed').value);
+  settings.taggerBoost = parseInt(document.getElementById('set-boost').value);
+  settings.playerCount = parseInt(document.getElementById('set-players').value);
+  settings.timer = parseInt(document.getElementById('set-timer').value);
+
+  document.getElementById('val-speed').innerText = settings.speed.toFixed(1);
+  document.getElementById('val-boost').innerText = `+${settings.taggerBoost}%`;
+  document.getElementById('val-players').innerText = settings.playerCount;
+  document.getElementById('val-timer').innerText = `${settings.timer}s`;
+}
+
+function resetSettings() {
+  document.getElementById('set-speed').value = defaultSettings.speed;
+  document.getElementById('set-boost').value = defaultSettings.taggerBoost;
+  document.getElementById('set-players').value = defaultSettings.playerCount;
+  document.getElementById('set-timer').value = defaultSettings.timer;
+  updateSettingsUI();
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  if (id) {
+    document.getElementById(id).classList.remove('hidden');
+    if (id === 'menu-screen' || id === 'map-screen' || id === 'settings-screen') {
+      playMenuMusic();
+    }
+  }
+}
+
+// --- INPUT HANDLING ---
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  handlePressTriggers(e.code);
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+// --- GAME VARIABLES ---
+let gameRunning = false;
+let currentMap = 'fields';
+let timeLeft = 60;
+let lastTime = 0;
+let tagCooldown = 0;
+let players = [];
+let platforms = [];
+let particles = [];
+let hazards = []; 
+let props = [];   
+
+const EMOTE_LIST = ["OVER HERE N00b :)", "GG!", ":P", "Oof", "Tag!", "Nice!"];
+
+const PLAYER_CONFIGS = [
+  { name: 'P1', color: '#3b82f6', up: 'KeyW', left: 'KeyA', right: 'KeyD', dash: 'KeyQ', emote: 'KeyS', x: 100 },
+  { name: 'P2', color: '#ef4444', up: 'ArrowUp', left: 'ArrowLeft', right: 'ArrowRight', dash: 'KeyY', emote: 'KeyK', x: 820 },
+  { name: 'P3', color: '#10b981', up: 'KeyI', left: 'KeyJ', right: 'KeyL', dash: 'KeyO', emote: 'KeyG', x: 320 },
+  { name: 'P4', color: '#eab308', up: 'KeyT', left: 'KeyF', right: 'KeyH', dash: 'Space', emote: 'ArrowDown', x: 600 }
+];
+
+function handlePressTriggers(code) {
+  if (!gameRunning) return;
+  for (let p of players) {
+    // Dash Trigger (10 second cooldown)
+    if (code === p.controls.dash && p.dashCooldown <= 0 && p.limpTimer <= 0) {
+      p.vx = p.facing * 520;
+      p.vy = -120;
+      p.dashCooldown = 10.0; 
+      playTone(600, 0.2, 'square', 0.08);
+    }
+    // Emote Trigger
+    if (code === p.controls.emote && p.emoteTimer <= 0) {
+      p.emoteTimer = 1.8;
+      p.currentEmote = EMOTE_LIST[Math.floor(Math.random() * EMOTE_LIST.length)];
+      playTone(400, 0.15, 'sine', 0.08);
+    }
+  }
+}
+
+// --- MAP DEFINITIONS ---
+const MAPS = {
+  fields: {
+    name: 'FIELDS',
+    bgTop: '#4facfe', bgBottom: '#00f2fe',
+    platColor: '#2ecc71', platTop: '#27ae60', friction: 0.82,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 960, h: 50, type: 'normal' },
+        { x: 120, y: 380, w: 200, h: 24, type: 'normal' },
+        { x: 640, y: 380, w: 200, h: 24, type: 'normal' },
+        { x: 380, y: 290, w: 200, h: 24, type: 'normal' },
+        { x: 80, y: 200, w: 180, h: 24, type: 'normal' },
+        { x: 700, y: 200, w: 180, h: 24, type: 'normal' },
+        { x: 360, y: 120, w: 240, h: 24, type: 'normal' }
+      ];
+    }
+  },
+  blossom: {
+    name: 'BLOSSOM',
+    bgTop: '#ffdde1', bgBottom: '#ee9ca7',
+    platColor: '#8d5b4c', platTop: '#ff9ebb', friction: 0.82,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 960, h: 50, type: 'normal' },
+        { x: 180, y: 390, w: 160, h: 22, type: 'normal' },
+        { x: 620, y: 390, w: 160, h: 22, type: 'normal' },
+        { x: 400, y: 300, w: 160, h: 22, type: 'normal' },
+        { x: 120, y: 210, w: 180, h: 22, type: 'normal' },
+        { x: 660, y: 210, w: 180, h: 22, type: 'normal' },
+        { x: 350, y: 130, w: 260, h: 22, type: 'normal' }
+      ];
+      props.push({ type: 'cherry_tree', x: 480, y: 490 });
+      for (let i = 0; i < 45; i++) {
+        particles.push({
+          x: Math.random() * 960, y: Math.random() * 540,
+          vx: -0.5 - Math.random(), vy: 1 + Math.random() * 1.5,
+          size: 4 + Math.random() * 4, color: '#ff7eb3', sway: Math.random() * Math.PI
+        });
+      }
+    }
+  },
+  volcanic: {
+    name: 'VOLCANIC',
+    bgTop: '#1f0808', bgBottom: '#6b1414',
+    platColor: '#2c2c2c', platTop: '#ff4500', friction: 0.82,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 350, h: 50, type: 'normal' },
+        { x: 610, y: 490, w: 350, h: 50, type: 'normal' },
+        { x: 380, y: 450, w: 200, h: 24, type: 'normal' },
+        { x: 100, y: 350, w: 190, h: 24, type: 'normal' },
+        { x: 670, y: 350, w: 190, h: 24, type: 'normal' },
+        { x: 360, y: 250, w: 240, h: 24, type: 'normal' },
+        { x: 160, y: 150, w: 170, h: 24, type: 'normal' },
+        { x: 630, y: 150, w: 170, h: 24, type: 'normal' }
+      ];
+    }
+  },
+  snowy: {
+    name: 'SNOWY',
+    bgTop: '#83a4d4', bgBottom: '#b6fbff',
+    platColor: '#ffffff', platTop: '#a5f3fc', friction: 0.965,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 960, h: 50, type: 'ice' },
+        { x: 140, y: 385, w: 220, h: 24, type: 'ice' },
+        { x: 600, y: 385, w: 220, h: 24, type: 'ice' },
+        { x: 370, y: 285, w: 220, h: 24, type: 'ice' },
+        { x: 90, y: 185, w: 200, h: 24, type: 'ice' },
+        { x: 670, y: 185, w: 200, h: 24, type: 'ice' }
+      ];
+      props.push({ type: 'snowman', x: 480, y: 490 });
+      props.push({ type: 'snowman', x: 220, y: 385 });
+      for (let i = 0; i < 60; i++) {
+        particles.push({
+          x: Math.random() * 960, y: Math.random() * 540,
+          vx: (Math.random() - 0.5) * 0.8, vy: 1.2 + Math.random() * 1.5,
+          size: 3 + Math.random() * 3, color: '#ffffff', sway: Math.random() * Math.PI
+        });
+      }
+    }
+  },
+  spooky: {
+    name: 'SPOOKY',
+    bgTop: '#090514', bgBottom: '#1e1035',
+    platColor: '#e5e5cb', platTop: '#cfcfb4', friction: 0.82,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 960, h: 50, type: 'bone' },
+        { x: 110, y: 380, w: 180, h: 22, type: 'bone' },
+        { x: 670, y: 380, w: 180, h: 22, type: 'bone' },
+        { x: 370, y: 310, w: 220, h: 22, type: 'bone' },
+        { x: 170, y: 210, w: 170, h: 22, type: 'bone' },
+        { x: 620, y: 210, w: 170, h: 22, type: 'bone' },
+        { x: 390, y: 120, w: 180, h: 22, type: 'bone' }
+      ];
+      props.push({ type: 'pumpkin', x: 150, y: 490 });
+      props.push({ type: 'pumpkin', x: 800, y: 490 });
+      props.push({ type: 'skeleton', x: 480, y: 490 });
+      props.push({ type: 'pumpkin', x: 470, y: 310 });
+    }
+  },
+  christmas: {
+    name: 'CHRISTMAS',
+    bgTop: '#0f2027', bgBottom: '#203a43',
+    platColor: '#c0392b', platTop: '#ffffff', friction: 0.84,
+    build: () => {
+      platforms = [
+        { x: 0, y: 490, w: 960, h: 50, type: 'normal' },
+        { x: 120, y: 370, w: 180, h: 24, type: 'normal' },
+        { x: 660, y: 370, w: 180, h: 24, type: 'normal' },
+        { x: 370, y: 270, w: 220, h: 24, type: 'normal' },
+        { x: 150, y: 160, w: 180, h: 24, type: 'normal' },
+        { x: 630, y: 160, w: 180, h: 24, type: 'normal' }
+      ];
+      props.push({ type: 'xmas_tree', x: 480, y: 490 });
+      props.push({ type: 'present', x: 240, y: 462, w: 32, h: 28, color: '#e74c3c', ribbon: '#f1c40f' });
+      props.push({ type: 'present', x: 690, y: 462, w: 32, h: 28, color: '#2ecc71', ribbon: '#e74c3c' });
+      props.push({ type: 'present', x: 464, y: 242, w: 32, h: 28, color: '#3498db', ribbon: '#ffffff' });
+      for (let i = 0; i < 45; i++) {
+        particles.push({
+          x: Math.random() * 960, y: Math.random() * 540,
+          vx: 0, vy: 1 + Math.random(), size: 3, color: '#fff', sway: Math.random() * 5
+        });
+      }
+    }
+  }
+};
+
+// --- INITIALIZE MATCH ---
+function startGame(mapKey) {
+  currentMap = mapKey;
+  showScreen(null);
+  document.getElementById('hud').classList.remove('hidden');
+  document.getElementById('controls-hint').classList.remove('hidden');
+
+  playMapMusic(mapKey);
+
+  timeLeft = settings.timer;
+  tagCooldown = 1.5;
+  particles = [];
+  hazards = [];
+  props = [];
+
+  MAPS[currentMap].build();
+
+  players = [];
+  const initialTagger = Math.floor(Math.random() * settings.playerCount);
+  for (let i = 0; i < settings.playerCount; i++) {
+    const cfg = PLAYER_CONFIGS[i];
+    players.push({
+      id: i,
+      name: cfg.name,
+      color: cfg.color,
+      controls: { up: cfg.up, left: cfg.left, right: cfg.right, dash: cfg.dash, emote: cfg.emote },
+      x: cfg.x, y: 100,
+      w: 36, h: 36,
+      vx: 0, vy: 0,
+      grounded: false,
+      isTagger: i === initialTagger,
+      limpTimer: 0,
+      dashCooldown: 0,
+      emoteTimer: 0,
+      currentEmote: '',
+      facing: 1,
+      animCycle: 0
+    });
+  }
+
+  document.getElementById('hud-map').innerText = `MAP: ${MAPS[currentMap].name}`;
+  gameRunning = true;
+  lastTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+// --- MAIN GAME LOOP ---
+function gameLoop(timestamp) {
+  if (!gameRunning) return;
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(gameLoop);
+}
+
+function update(dt) {
+  timeLeft -= dt;
+  if (tagCooldown > 0) tagCooldown -= dt;
+
+  if (timeLeft <= 0) {
+    endGame();
+    return;
+  }
+
+  document.getElementById('hud-timer').innerText = `${Math.ceil(timeLeft)}s`;
+  const tagger = players.find(p => p.isTagger);
+  document.getElementById('hud-tagger').innerText = `TAGGER: ${tagger.name}`;
+  document.getElementById('hud-tagger').style.color = tagger.color;
+
+  // Volcanic hazards
+  if (currentMap === 'volcanic' && Math.random() < 0.035) {
+    hazards.push({
+      x: 40 + Math.random() * 880,
+      y: -30,
+      r: 14 + Math.random() * 8,
+      vy: 260 + Math.random() * 140,
+      rot: 0
+    });
+  }
+
+  for (let i = hazards.length - 1; i >= 0; i--) {
+    let h = hazards[i];
+    h.y += h.vy * dt;
+    h.rot += 4 * dt;
+    if (h.y > 560) {
+      hazards.splice(i, 1);
+      continue;
+    }
+    for (let p of players) {
+      if (p.limpTimer <= 0 &&
+          h.x + h.r > p.x && h.x - h.r < p.x + p.w &&
+          h.y + h.r > p.y && h.y - h.r < p.y + p.h) {
+        p.limpTimer = 2.0; 
+        p.vy = -180;
+        hazards.splice(i, 1);
+        playTone(180, 0.3, 'sawtooth', 0.1);
+        break;
+      }
+    }
+  }
+
+  for (let pt of particles) {
+    pt.sway += dt * 2;
+    pt.x += pt.vx + Math.sin(pt.sway) * 0.4;
+    pt.y += pt.vy;
+    if (pt.y > 540) { pt.y = -10; pt.x = Math.random() * 960; }
+    if (pt.x < 0) pt.x = 960;
+    if (pt.x > 960) pt.x = 0;
+  }
+
+  const mapFriction = MAPS[currentMap].friction;
+  const baseMaxSpeed = settings.speed * 240;
+
+  for (let p of players) {
+    if (p.limpTimer > 0) p.limpTimer -= dt;
+    if (p.dashCooldown > 0) p.dashCooldown -= dt;
+    if (p.emoteTimer > 0) p.emoteTimer -= dt;
+
+    let maxSpeed = baseMaxSpeed;
+    if (p.isTagger) maxSpeed *= (1 + settings.taggerBoost / 100);
+
+    if (p.limpTimer <= 0) {
+      const accel = mapFriction > 0.9 ? 0.45 : 1.4;
+      if (keys[p.controls.left]) {
+        p.vx -= accel * 60 * dt * (maxSpeed / 300);
+        p.facing = -1;
+      }
+      if (keys[p.controls.right]) {
+        p.vx += accel * 60 * dt * (maxSpeed / 300);
+        p.facing = 1;
+      }
+      if (keys[p.controls.up] && p.grounded) {
+        p.vy = -560;
+        p.grounded = false;
+        playTone(320, 0.15, 'sine', 0.05);
+      }
+    }
+
+    p.vx *= Math.pow(mapFriction, dt * 60);
+    if (Math.abs(p.vx) > maxSpeed) {
+      p.vx = Math.sign(p.vx) * maxSpeed;
+    }
+
+    // Foot animation cycle
+    if (Math.abs(p.vx) > 20 && p.grounded) {
+      p.animCycle += Math.abs(p.vx) * dt * 0.15;
+    } else {
+      p.animCycle = 0;
+    }
+
+    p.vy += 1350 * dt;
+
+    p.x += p.vx * dt;
+    if (p.x < 0) { p.x = 0; p.vx = 0; }
+    if (p.x + p.w > 960) { p.x = 960 - p.w; p.vx = 0; }
+
+    p.y += p.vy * dt;
+    p.grounded = false;
+
+    for (let plat of platforms) {
+      if (p.x + p.w > plat.x && p.x < plat.x + plat.w &&
+          p.y + p.h > plat.y && p.y < plat.y + plat.h) {
+        if (p.vy > 0 && p.y + p.h - p.vy * dt <= plat.y + 12) {
+          p.y = plat.y - p.h;
+          p.vy = 0;
+          p.grounded = true;
+        }
+      }
+    }
+
+    if (p.y > 540) {
+      p.y = 50;
+      p.x = 480;
+      p.vy = 0;
+      if (currentMap === 'volcanic') p.limpTimer = 1.5;
+    }
+
+    if (currentMap === 'christmas') {
+      for (let prop of props) {
+        if (prop.type === 'present' &&
+            p.x + p.w > prop.x && p.x < prop.x + prop.w &&
+            p.y + p.h > prop.y && p.y < prop.y + prop.h) {
+          p.vy = -880; 
+          p.grounded = false;
+          playTone(500, 0.2, 'triangle', 0.08);
+        }
+      }
+    }
+  }
+
+  if (tagCooldown <= 0 && tagger && tagger.limpTimer <= 0) {
+    for (let other of players) {
+      if (other.id !== tagger.id) {
+        if (tagger.x < other.x + other.w && tagger.x + tagger.w > other.x &&
+            tagger.y < other.y + other.h && tagger.y + tagger.h > other.y) {
+          tagger.isTagger = false;
+          other.isTagger = true;
+          tagCooldown = 1.2; 
+          playTone(750, 0.25, 'square', 0.1);
+          break;
+        }
+      }
+    }
+  }
+}
+
+// --- RENDERING ---
+function draw() {
+  const m = MAPS[currentMap];
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 540);
+  grad.addColorStop(0, m.bgTop);
+  grad.addColorStop(1, m.bgBottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 960, 540);
+
+  if (currentMap === 'volcanic') {
+    ctx.fillStyle = '#ff3300';
+    ctx.fillRect(350, 510, 260, 30);
+  }
+
+  for (let prop of props) {
+    if (prop.type === 'cherry_tree') {
+      ctx.fillStyle = '#5c3a21';
+      ctx.fillRect(prop.x - 12, prop.y - 110, 24, 110);
+      ctx.fillStyle = '#ffb7c5';
+      ctx.beginPath();
+      ctx.arc(prop.x, prop.y - 130, 65, 0, Math.PI * 2);
+      ctx.arc(prop.x - 45, prop.y - 105, 45, 0, Math.PI * 2);
+      ctx.arc(prop.x + 45, prop.y - 105, 45, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (prop.type === 'snowman') {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(prop.x, prop.y - 16, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(prop.x, prop.y - 40, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff6600'; 
+      ctx.fillRect(prop.x, prop.y - 42, 10, 4);
+    } else if (prop.type === 'pumpkin') {
+      ctx.fillStyle = '#ff7518';
+      ctx.beginPath(); ctx.arc(prop.x, prop.y - 14, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffea00'; 
+      ctx.fillRect(prop.x - 7, prop.y - 18, 4, 4);
+      ctx.fillRect(prop.x + 3, prop.y - 18, 4, 4);
+    } else if (prop.type === 'skeleton') {
+      ctx.strokeStyle = '#eee'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(prop.x, prop.y - 45); ctx.lineTo(prop.x, prop.y - 15); ctx.stroke();
+      ctx.fillStyle = '#eee'; ctx.beginPath(); ctx.arc(prop.x, prop.y - 52, 8, 0, Math.PI * 2); ctx.fill();
+    } else if (prop.type === 'xmas_tree') {
+      ctx.fillStyle = '#5c3a21'; ctx.fillRect(prop.x - 10, prop.y - 30, 20, 30);
+      ctx.fillStyle = '#1e8449';
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(prop.x - 55 + i*10, prop.y - 30 - i*35);
+        ctx.lineTo(prop.x + 55 - i*10, prop.y - 30 - i*35);
+        ctx.lineTo(prop.x, prop.y - 90 - i*35);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#f1c40f'; 
+      ctx.beginPath(); ctx.arc(prop.x, prop.y - 165, 8, 0, Math.PI * 2); ctx.fill();
+    } else if (prop.type === 'present') {
+      ctx.fillStyle = prop.color;
+      ctx.fillRect(prop.x, prop.y, prop.w, prop.h);
+      ctx.fillStyle = prop.ribbon;
+      ctx.fillRect(prop.x + prop.w/2 - 3, prop.y, 6, prop.h);
+      ctx.fillRect(prop.x, prop.y + prop.h/2 - 3, prop.w, 6);
+    }
+  }
+
+  for (let plat of platforms) {
+    ctx.fillStyle = m.platColor;
+    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+
+    ctx.fillStyle = m.platTop;
+    ctx.fillRect(plat.x, plat.y, plat.w, 6);
+
+    for (let sx = plat.x + 6; sx < plat.x + plat.w - 10; sx += 20) {
+      ctx.fillStyle = m.platTop;
+      ctx.fillRect(sx, plat.y - 4, 12, 4);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(sx, plat.y - 4, 12, 2);
+    }
+  }
+
+  for (let h of hazards) {
+    ctx.save();
+    ctx.translate(h.x, h.y);
+    ctx.rotate(h.rot);
+    ctx.fillStyle = '#3d1c1c';
+    ctx.strokeStyle = '#ff5500';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, h.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  for (let pt of particles) {
+    ctx.fillStyle = pt.color;
+    ctx.beginPath();
+    ctx.ellipse(pt.x, pt.y, pt.size, pt.size * 0.6, pt.sway, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw Players (Ducks with animated feet)
+  for (let p of players) {
+    ctx.save();
+    if (p.limpTimer > 0) {
+      ctx.translate(p.x + p.w/2, p.y + p.h - 6);
+      ctx.rotate(Math.PI / 2);
+      ctx.translate(-(p.x + p.w/2), -(p.y + p.h - 6));
+    } else if (p.emoteTimer > 0) {
+      ctx.translate(p.x + p.w/2, p.y + p.h/2);
+      ctx.rotate(p.emoteTimer * 10);
+      ctx.translate(-(p.x + p.w/2), -(p.y + p.h/2));
+    }
+
+    // Tint Duck Sprite with Player Color
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    if (duckImg.complete && duckImg.naturalWidth !== 0) {
+      ctx.drawImage(duckImg, p.x, p.y, p.w, p.h);
+    } else {
+      // Fallback block if image is loading
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+    }
+    ctx.restore();
+
+    // Animated Duck Feet (Going up and down)
+    ctx.fillStyle = '#f59e0b'; // Orange webbed feet
+    let footOffset1 = Math.sin(p.animCycle) * 4;
+    let footOffset2 = Math.cos(p.animCycle) * 4;
+    if (!p.grounded) { footOffset1 = -2; footOffset2 = -2; }
+
+    ctx.fillRect(p.x + 6, p.y + p.h - 4 + footOffset1, 8, 4);
+    ctx.fillRect(p.x + p.w - 14, p.y + p.h - 4 + footOffset2, 8, 4);
+
+    if (p.isTagger) {
+      ctx.strokeStyle = '#ff0044';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(p.x - 2, p.y - 2, p.w + 4, p.h + 4);
+
+      ctx.fillStyle = '#ff0044';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('IT!', p.x + p.w/2, p.y - 8);
+    }
+    ctx.restore();
+
+    // Draw Emote Speech Bubble
+    if (p.emoteTimer > 0) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(p.x + p.w/2 - 65, p.y - 36, 130, 22, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.currentEmote, p.x + p.w/2, p.y - 21);
+    }
+  }
+}
+
+function endGame() {
+  gameRunning = false;
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('controls-hint').classList.add('hidden');
+
+  playMenuMusic(); // Return to chill menu vibe
+
+  const tagger = players.find(p => p.isTagger);
+  document.getElementById('winner-text').innerText = 'RUNNERS WIN!';
+  document.getElementById('gameover-sub').innerText = `${tagger.name} was left as the Tagger when time ran out!`;
+  showScreen('gameover-screen');
+}
+</script>
+</body>
+</html>
